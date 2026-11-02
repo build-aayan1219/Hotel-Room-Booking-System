@@ -110,16 +110,16 @@ SQLite stores records permanently at:
 
 ### Prerequisites
 - JDK 17 or newer (OpenJDK / JetBrains Runtime 25 verified).
-- Maven 3.8+ (A portable `mvnw.bat` wrapper is included in the workspace).
+- Internet access on first use (the included Maven Wrapper downloads Maven and project dependencies automatically).
 
 ### 1. Run Automated Unit & Persistence Tests
 ```powershell
-.\mvnw.bat test
+.\mvnw.cmd test
 ```
 
 ### 2. Launch the Application
 ```powershell
-.\mvnw.bat javafx:run
+.\mvnw.cmd javafx:run
 ```
 *(Or if standard Maven is in your system PATH: `mvn javafx:run`)*
 
