@@ -1,5 +1,8 @@
 package com.hotelflow.ui;
 
+import com.hotelflow.database.DatabaseManager;
+import com.hotelflow.model.User;
+import com.hotelflow.service.AuthService;
 import com.hotelflow.service.HotelService;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
@@ -22,18 +25,19 @@ import java.util.Map;
 /**
  * Main application window layout containing:
  * 1. Deep Navy Modern Sidebar
- * 2. Professional Top Navigation Bar with active view indicator and live system clock
+ * 2. Professional Top Navigation Bar with active user profile, database badge, clock, and Logout
  * 3. Dynamic Center Content with lazy caching for smooth navigation
- * 4. Periodic background Timeline to keep dashboard and desk metrics fresh
+ * 4. Periodic background Timeline to keep dashboard metrics fresh
  */
 public class MainView extends BorderPane {
     private final HotelService service;
+    private final AuthService authService;
+    private final Runnable onLogout;
 
     private Label lblPageTitle;
     private Label lblSystemClock;
     private StackPane contentArea;
 
-    private final Map<String, Node> viewCache = new HashMap<>();
     private final Map<String, Button> navButtonMap = new HashMap<>();
     private String currentView = "";
 
@@ -46,7 +50,13 @@ public class MainView extends BorderPane {
     private ReportsView reportsView;
 
     public MainView(HotelService service) {
+        this(service, null, null);
+    }
+
+    public MainView(HotelService service, AuthService authService, Runnable onLogout) {
         this.service = service;
+        this.authService = authService;
+        this.onLogout = onLogout;
         initializeViews();
         buildUI();
         navigateTo("Dashboard");
@@ -73,7 +83,7 @@ public class MainView extends BorderPane {
         brandBox.getStyleClass().add("brand-container");
         Label lblBrand = new Label("HotelFlow");
         lblBrand.getStyleClass().add("brand-title");
-        Label lblSub = new Label("Management & Dashboard");
+        Label lblSub = new Label("Management Suite");
         lblSub.getStyleClass().add("brand-subtitle");
         brandBox.getChildren().addAll(lblBrand, lblSub);
 
@@ -93,17 +103,53 @@ public class MainView extends BorderPane {
         // --- 2. TOP BAR ---
         HBox topBar = new HBox(16);
         topBar.getStyleClass().add("top-bar");
+        topBar.setAlignment(Pos.CENTER_LEFT);
 
         lblPageTitle = new Label("Dashboard");
         lblPageTitle.getStyleClass().add("page-title");
 
-        Label badge = new Label("VIT Pune Demo MVP • SQLite Persisted");
-        badge.getStyleClass().add("top-bar-badge");
+        // Database Engine Badge
+        String dbLabel = DatabaseManager.isMySql() ? "🐬 MySQL Connected" : "📦 Local SQLite Active";
+        Label dbBadge = new Label(dbLabel);
+        dbBadge.setStyle("-fx-background-color: #f1f5f9; -fx-text-fill: #475569; -fx-padding: 4px 10px; " +
+                         "-fx-background-radius: 12px; -fx-font-size: 11.5px; -fx-font-weight: bold;");
 
+        // Active User Profile Pill
+        User currentUser = authService != null ? authService.getCurrentUser() : null;
+        String userName = currentUser != null ? currentUser.getFullName() : "Administrator";
+        String userRole = currentUser != null ? currentUser.getRole().name() : "ADMIN";
+
+        HBox userPill = new HBox(8);
+        userPill.setAlignment(Pos.CENTER_LEFT);
+        userPill.setStyle("-fx-background-color: #eff6ff; -fx-padding: 4px 12px; -fx-background-radius: 20px;");
+
+        Label lblUserIcon = new Label("👤");
+        Label lblUserName = new Label(userName);
+        lblUserName.setStyle("-fx-font-weight: bold; -fx-text-fill: #1e40af; -fx-font-size: 12px;");
+
+        Label lblUserRole = new Label(userRole);
+        lblUserRole.setStyle("-fx-background-color: #3b82f6; -fx-text-fill: #ffffff; -fx-font-size: 10px; " +
+                             "-fx-font-weight: bold; -fx-padding: 2px 6px; -fx-background-radius: 6px;");
+
+        userPill.getChildren().addAll(lblUserIcon, lblUserName, lblUserRole);
+
+        // System Clock
         lblSystemClock = new Label();
-        lblSystemClock.setStyle("-fx-font-weight: bold; -fx-text-fill: #475569;");
+        lblSystemClock.setStyle("-fx-font-weight: bold; -fx-text-fill: #64748b; -fx-font-size: 12px;");
 
-        topBar.getChildren().addAll(lblPageTitle, badge, UIUtils.createSpacer(), lblSystemClock);
+        // Logout Button
+        Button btnLogout = new Button("Logout");
+        btnLogout.setStyle("-fx-background-color: #fee2e2; -fx-text-fill: #b91c1c; -fx-font-weight: bold; " +
+                           "-fx-background-radius: 8px; -fx-padding: 5px 12px; -fx-cursor: hand;");
+        btnLogout.setOnAction(e -> {
+            boolean confirm = UIUtils.showConfirmation("Confirm Logout", "Are you sure you want to sign out?");
+            if (confirm) {
+                if (authService != null) authService.logout();
+                if (onLogout != null) onLogout.run();
+            }
+        });
+
+        topBar.getChildren().addAll(lblPageTitle, dbBadge, UIUtils.createSpacer(), lblSystemClock, userPill, btnLogout);
         setTop(topBar);
 
         // --- 3. CENTER CONTENT AREA ---
@@ -169,7 +215,7 @@ public class MainView extends BorderPane {
     }
 
     private void startClockAndAutoRefresh() {
-        DateTimeFormatter timeFmt = DateTimeFormatter.ofPattern("EEEE, dd MMM yyyy  HH:mm:ss");
+        DateTimeFormatter timeFmt = DateTimeFormatter.ofPattern("EEE, dd MMM yyyy  HH:mm:ss");
 
         // 1-second clock ticker
         Timeline clockTimeline = new Timeline(new KeyFrame(Duration.seconds(1), e -> {

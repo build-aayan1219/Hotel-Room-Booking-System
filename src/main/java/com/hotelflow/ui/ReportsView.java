@@ -27,13 +27,10 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Reports & Analytics View: Charts for Revenue, Booking & Cancellation statistics,
@@ -142,7 +139,7 @@ public class ReportsView {
             DateTimeFormatter fmt = DateTimeFormatter.ofPattern("dd-MMM");
             for (int i = 6; i >= 0; i--) {
                 LocalDate d = today.minusDays(i);
-                BigDecimal rev = new com.hotelflow.dao.PaymentDao().getRevenueForDate(d);
+                BigDecimal rev = service.getRevenueForDate(d);
                 barSeries.getData().add(new XYChart.Data<>(d.format(fmt), rev.doubleValue()));
             }
             barChart.getData().add(barSeries);
