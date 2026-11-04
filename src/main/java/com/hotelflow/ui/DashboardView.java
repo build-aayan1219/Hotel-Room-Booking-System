@@ -25,7 +25,6 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.Map;
 import java.util.function.Consumer;
 
 /**
@@ -222,7 +221,7 @@ public class DashboardView {
                 // Populate last 7 days from today
                 for (int i = 6; i >= 0; i--) {
                     LocalDate d = today.minusDays(i);
-                    BigDecimal rev = new com.hotelflow.dao.PaymentDao().getRevenueForDate(d);
+                    BigDecimal rev = service.getRevenueForDate(d);
                     series.getData().add(new XYChart.Data<>(d.format(fmt), rev.doubleValue()));
                 }
                 revenueChart.getData().add(series);

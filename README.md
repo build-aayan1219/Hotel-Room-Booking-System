@@ -1,137 +1,105 @@
-# HotelFlow — A Java-Based Hotel Booking & Management MVP with Real-Time Dashboard
+# HotelFlow — Hotel Booking & Management System
 
-**HotelFlow** is a modern desktop hotel-management application built using **Java 17+ (Java 25 verified)**, **JavaFX**, **SQLite (JDBC)**, and **Maven**.
+**HotelFlow** is a modern hotel management application designed for academic software engineering, OOP vivas, and production demonstration (**VIT Pune**).
 
-Developed as an academic software engineering and Object-Oriented Programming (OOP) project for **VIT Pune**, it elevates a basic terminal room-booking console into a production-grade desktop management suite with live analytics, data persistence, and front-desk workflows.
+It features a **Dual-Mode Execution Architecture**:
+1. 📟 **Eclipse Terminal / Console Mode**: Runs directly inside Eclipse's built-in **Console tab** with formatted ASCII tables, interactive menus, printed receipt slips, and zero JavaFX setup needed.
+2. 🖥️ **Modern Desktop GUI (JavaFX)**: A desktop interface with a card-style login screen, real-time KPI metrics, revenue line charts, and front-desk workflows.
 
----
-
-## 🌟 Key Features & Modules
-
-1. **Executive Real-Time Dashboard**:
-   - Live KPI cards: Total Rooms, Operationally Available, Currently Occupied, Under Maintenance, Today's Scheduled Check-Ins / Check-Outs, Today's Collected Revenue, and Occupancy Rate.
-   - Interactive JavaFX Revenue Trend line chart populated directly from SQLite transactions.
-   - Recent reservations & arrivals log with quick action buttons for instant task execution.
-   - 30-second silent background refresh cycle (`Timeline`) for live front-desk tracking.
-
-2. **Room Management**:
-   - Inventory tracking: Unique Room Number, Type (`SINGLE`, `DOUBLE`, `DELUXE`, `SUITE`), Base Tariff in INR (₹), Floor, and Description.
-   - Operational status vs. booking availability: Supports `ACTIVE` and `MAINTENANCE` states.
-   - Safe foreign-key deletion protection (prevents deleting rooms with historical bookings to preserve financial audit trail).
-   - Instant search and type/status filtering.
-
-3. **Reservations & Booking Management**:
-   - 5-step guided reservation wizard with automated date-range conflict prevention.
-   - Strict booking overlap condition:
-     $$\text{existingCheckIn} < \text{newCheckOut} \land \text{existingCheckOut} > \text{newCheckIn}$$
-     *(Allows departure day turnarounds, e.g. guest departs 30 Oct, next guest checks in 30 Oct).*
-   - Full lifecycle states: `CONFIRMED` $\rightarrow$ `CHECKED_IN` $\rightarrow$ `CHECKED_OUT` or `CANCELLED`.
-   - Comprehensive booking detail modal with full invoice breakdown.
-
-4. **Guest Directory**:
-   - Multi-field guest profiles: Full Name, Phone, Email, and Address.
-   - One guest can have multiple past and active reservations.
-   - Real-time search across names, phone numbers, and emails.
-
-5. **Front Desk Check-In & Check-Out**:
-   - Clear operational queues:
-     - **Eligible Check-Ins**: Confirmed arrivals ready to be checked in.
-     - **Currently In-House**: Checked-in guests occupying rooms.
-   - Enforces business rule: *Only checked-in guests count toward live room occupancy; future reservations do not.*
-   - Pre-checkout validation with balance warnings to ensure settlement.
-
-6. **Billing, Invoices & Payments**:
-   - Itemized bills: Nights $\times$ Nightly Rate = Subtotal, configurable GST (default 12%), Total, Amount Paid, and Balance Due.
-   - Stored in SQLite as exact integer paise for mathematical decimal precision.
-   - Multi-method transaction logging: UPI, Cash, Credit Card, Debit Card, Net Banking.
-   - One-click Text Invoice export (`HotelFlow_Invoice_<id>.txt`) saved to user directory.
-
-7. **Reports & Executive Analytics**:
-   - Bar Chart of daily collections for the past 7 days.
-   - Pie Chart of reservation status distribution.
-   - Room Performance table displaying total bookings, total nights booked, and total revenue contributed per room.
+Both interfaces share **100% of the backend logic, authentication security, and real database layer**.
 
 ---
 
-## 🏗️ Architecture & OOP Design
+## 🔐 Default Login Credentials
 
-The project is structured into clear, maintainable packages:
+| Role | Username | Password | Access Level |
+| :--- | :--- | :--- | :--- |
+| **Administrator** | `admin` | `admin123` | Full access (User accounts, Room management, Reports) |
+| **Front Desk Staff** | `staff` | `staff123` | Front-desk operations (Reservations, Check-In/Out, Billing) |
+
+---
+
+## 💾 Smart Dual-Engine Database
+
+* **Primary Engine (MySQL)**: Attempts connection to MySQL (`localhost:3306/hotelflow_db`).
+* **Automatic Safety Fallback (SQLite)**: If MySQL is not running (e.g., on an evaluator's laptop), the system **automatically falls back to a local SQLite database (`hotelflow.db`)** inside the project folder with zero crashes.
+* **Pre-Seeded Data**: Pre-loaded with single/double/deluxe/suite rooms, registered guests, active stays, and sample payments on first launch.
+
+---
+
+## 🏗️ Architecture & Package Structure
 
 ```
 com.hotelflow
-├── Main.java                        # JavaFX Application Launcher
-├── model/                           # Domain Entities & Enums
-│   ├── Room.java                    # Encapsulated Room entity
+├── Main.java                        # Primary Entry Point (Runs Eclipse Console CLI by default)
+├── GuiApp.java                      # JavaFX Desktop GUI Application Launcher
+│
+├── model/                           # Domain Entities
+│   ├── User.java                    # Login entity with password hash & role
+│   ├── UserRole.java                # ADMIN vs RECEPTIONIST
+│   ├── Room.java                    # Room entity with tariffs, types & statuses
 │   ├── Guest.java                   # Guest profile entity
-│   ├── Booking.java                 # Booking transaction entity & pricing math
-│   ├── Payment.java                 # Payment entity
-│   ├── RoomType.java                # Single, Double, Deluxe, Suite
-│   ├── RoomStatus.java              # Active, Maintenance
-│   ├── BookingStatus.java           # Confirmed, Checked-In, Checked-Out, Cancelled
-│   └── PaymentStatus.java           # Paid, Partially Paid, Unpaid
+│   ├── Booking.java                 # Booking transaction entity & billing math
+│   ├── Payment.java                 # Payment record entity
+│   └── Enums: RoomType, RoomStatus, BookingStatus, PaymentStatus
+│
 ├── database/
-│   └── DatabaseManager.java         # SQLite Connection, DDL, and Seeding
-├── dao/                             # Data Access Object Layer (PreparedStatements)
-│   ├── RoomDao.java
-│   ├── GuestDao.java
-│   ├── BookingDao.java
-│   └── PaymentDao.java
-├── service/                         # Business Logic & Service Layer
-│   ├── HotelConfig.java             # Tax configuration (12% GST)
-│   └── HotelService.java            # Conflict checking, check-in/out rules, metrics
-├── ui/                              # JavaFX Desktop Interface
-│   ├── MainView.java                # BorderPane shell with sidebar and top bar
-│   ├── DashboardView.java           # KPI cards, charts, and quick actions
-│   ├── RoomManagementView.java      # Room inventory table & modal dialogs
-│   ├── BookingManagementView.java   # Booking table & 5-step wizard
-│   ├── GuestManagementView.java     # Guest directory table & dialogs
-│   ├── CheckInOutView.java          # Front desk split operations
-│   ├── BillingView.java             # Invoices, payments, and text file export
-│   ├── ReportsView.java             # BarChart, PieChart, and room performance
-│   └── UIUtils.java                 # Formatters, badges, and modal dialog helpers
-└── resources/
-    └── css/style.css                # Polished deep-navy and slate CSS styling
+│   └── DatabaseManager.java         # Smart Dual-Engine: MySQL with SQLite Auto-Fallback
+│
+├── service/
+│   ├── AuthService.java             # User logins, SHA-256 password hashing & sessions
+│   ├── HotelService.java            # Conflict overlap math, check-in/out rules, metrics
+│   └── HotelConfig.java             # Tax configuration (12% GST)
+│
+├── cli/                             # 📟 ECLIPSE CONSOLE VERSION (No JavaFX Required)
+│   ├── HotelFlowCLI.java            # Interactive command-line UI with numbered menus
+│   └── TableFormatter.java          # ASCII box-drawing, dividers & aligned data tables
+│
+└── ui/                              # 🖥️ DESKTOP JAVAFX GUI
+    ├── LoginView.java               # Modern card-based authentication view
+    ├── MainView.java                # Sidebar layout with user profile pill & logout
+    ├── DashboardView.java           # Live KPI cards, charts & quick action buttons
+    ├── RoomManagementView.java      # Room inventory table & modal dialogs
+    ├── BookingManagementView.java   # Booking table & 5-step guided wizard
+    ├── GuestManagementView.java     # Guest directory table & dialogs
+    ├── CheckInOutView.java          # Front desk split check-in / check-out operations
+    ├── BillingView.java             # Invoices, payment records & text invoice export
+    ├── ReportsView.java             # BarChart, PieChart & room performance metrics
+    └── UIUtils.java                 # Badges, alert modals & formatters
 ```
 
 ---
 
-## 💾 Database Location & Schema
+## 🚀 How to Run in Eclipse IDE
 
-SQLite stores records permanently at:
-`~/.hotelflow/hotelflow.db` (User home directory)
+### 1. Import into Eclipse
+1. Open Eclipse IDE.
+2. Click **File** $\rightarrow$ **Import...**
+3. Select **Maven** $\rightarrow$ **Existing Maven Projects**, browse to this directory (`Hotel-Room-Booking-System`), and click **Finish**.
 
-- Enforces SQLite `PRAGMA foreign_keys = ON;`
-- Monetary amounts stored as `INTEGER` (paise) to prevent floating-point rounding errors.
-- Pre-seeded with realistic initial rooms (Singles, Doubles, Deluxes, Suites), sample guests, active check-ins, upcoming bookings, and payments on first launch.
+### 2. Run in Eclipse Console (Terminal Mode)
+1. In the **Project Explorer**, expand: `src/main/java` $\rightarrow$ `com.hotelflow` $\rightarrow$ `Main.java`.
+2. **Right-click `Main.java`** $\rightarrow$ **Run As** $\rightarrow$ **Java Application**.
+3. The interactive system starts instantly inside the **Console tab** at the bottom of Eclipse!
+4. Login with `admin` / `admin123`.
+
+### 3. Run the Desktop GUI (JavaFX Window)
+* **Option A**: Right-click `GuiApp.java` in Eclipse $\rightarrow$ **Run As** $\rightarrow$ **Java Application**.
+* **Option B**: From the terminal, run:
+  ```powershell
+  .\mvnw.cmd javafx:run
+  ```
 
 ---
 
-## 🚀 How to Build and Run
+## 🧪 Automated Unit & Persistence Tests
 
-### Prerequisites
-- JDK 17 or newer (OpenJDK / JetBrains Runtime 25 verified).
-- Maven 3.8+ (A portable `mvnw.bat` wrapper is included in the workspace).
-
-### 1. Run Automated Unit & Persistence Tests
+Run all unit tests:
 ```powershell
-.\mvnw.bat test
+.\mvnw.cmd test
 ```
 
-### 2. Launch the Application
-```powershell
-.\mvnw.bat javafx:run
-```
-*(Or if standard Maven is in your system PATH: `mvn javafx:run`)*
-
----
-
-## 🧪 Verification & Viva Demonstration
-
-All core business requirements have been verified with automated JUnit 5 test suites:
-1. `HotelBusinessLogicTest`:
-   - Validates strict date validation ($checkOut > checkIn$).
-   - Validates financial calculations (night counts, 12% GST, totals, partial payment balances).
-   - Validates the conflict overlap condition including turnaround date rules.
-2. `DatabasePersistenceTest`:
-   - Validates automated SQLite table creation (`rooms`, `guests`, `bookings`, `payments`).
-   - Validates foreign-key cascades, data insertion, and real-time balance updates.
+All 9 automated test suites verify:
+1. `AuthServiceTest`: Admin/staff authentication, invalid password rejection, user registration, and session logout.
+2. `HotelBusinessLogicTest`: Strict date validation, 12% GST calculation, and turnaround overlap math.
+3. `DatabasePersistenceTest`: Schema seeding, user table initialization, booking insertion, and balance tracking.

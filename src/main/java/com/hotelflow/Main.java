@@ -1,46 +1,41 @@
 package com.hotelflow;
 
+import com.hotelflow.cli.HotelFlowCLI;
 import com.hotelflow.database.DatabaseManager;
+import com.hotelflow.service.AuthService;
 import com.hotelflow.service.HotelService;
-import com.hotelflow.ui.MainView;
-import javafx.application.Application;
-import javafx.scene.Scene;
-import javafx.stage.Stage;
 
-import java.net.URL;
+import java.util.Arrays;
 
 /**
- * HotelFlow Application Launcher.
+ * HotelFlow Primary Entry Point.
+ * 
+ * Running directly in Eclipse (Right-Click -> Run As -> Java Application)
+ * starts the interactive Terminal/Console Interface inside Eclipse's Console tab.
+ * 
+ * To launch the Desktop JavaFX Graphical Interface:
+ * 1. Run GuiApp.java in Eclipse, OR
+ * 2. Run via terminal: mvn javafx:run, OR
+ * 3. Pass '--gui' as a program argument.
  */
-public class Main extends Application {
-
-    @Override
-    public void start(Stage primaryStage) {
-        // 1. Initialize SQLite Database and schema
-        DatabaseManager.initializeDatabase();
-
-        // 2. Initialize Core Service & UI Shell
-        HotelService service = new HotelService();
-        MainView mainView = new MainView(service);
-
-        Scene scene = new Scene(mainView, 1280, 800);
-
-        // Load CSS stylesheet
-        URL cssUrl = getClass().getResource("/css/style.css");
-        if (cssUrl != null) {
-            scene.getStylesheets().add(cssUrl.toExternalForm());
-        } else {
-            System.err.println("Warning: /css/style.css not found in classpath.");
-        }
-
-        primaryStage.setTitle("HotelFlow — Java-Based Hotel Booking & Management MVP");
-        primaryStage.setScene(scene);
-        primaryStage.setMinWidth(1080);
-        primaryStage.setMinHeight(700);
-        primaryStage.show();
-    }
+public class Main {
 
     public static void main(String[] args) {
-        launch(args);
+        // 1. Initialize SQLite / MySQL database & schema
+        DatabaseManager.initializeDatabase();
+
+        // 2. Check for GUI flag
+        boolean launchGui = args != null && Arrays.stream(args)
+                .anyMatch(a -> a.equalsIgnoreCase("--gui") || a.equalsIgnoreCase("-g"));
+
+        if (launchGui) {
+            GuiApp.main(args);
+        } else {
+            // Default Eclipse mode: Interactive Terminal UI
+            HotelService hotelService = new HotelService();
+            AuthService authService = new AuthService();
+            HotelFlowCLI cli = new HotelFlowCLI(hotelService, authService);
+            cli.start();
+        }
     }
 }

@@ -43,6 +43,13 @@
             <version>3.45.1.0</version>
         </dependency>
 
+        <!-- MySQL JDBC Driver -->
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <version>8.3.0</version>
+        </dependency>
+
         <!-- JUnit 5 for tests -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
@@ -67,7 +74,7 @@
                 <artifactId>javafx-maven-plugin</artifactId>
                 <version>0.0.8</version>
                 <configuration>
-                    <mainClass>com.hotelflow.Main</mainClass>
+                    <mainClass>com.hotelflow.GuiApp</mainClass>
                 </configuration>
             </plugin>
             <plugin>

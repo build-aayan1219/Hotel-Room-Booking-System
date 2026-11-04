@@ -18,6 +18,7 @@ import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -200,13 +201,6 @@ public class HotelService {
             throw new IllegalStateException("Only CHECKED_IN guests can be checked out. Current status: " + booking.getStatus());
         }
 
-        // Check outstanding balance
-        BigDecimal balance = booking.getBalanceAmount();
-        if (balance.compareTo(BigDecimal.ZERO) > 0) {
-            // Note: The system can warn or require payment. We will still allow check-out if approved,
-            // but provide validation indicator in the UI.
-        }
-
         bookingDao.updateStatus(bookingId, BookingStatus.CHECKED_OUT);
     }
 
@@ -239,6 +233,14 @@ public class HotelService {
 
     public BigDecimal getTodayRevenue() throws SQLException {
         return paymentDao.getRevenueForDate(LocalDate.now());
+    }
+
+    public BigDecimal getRevenueForDate(LocalDate date) throws SQLException {
+        return paymentDao.getRevenueForDate(date);
+    }
+
+    public Map<String, BigDecimal> getDailyRevenueLastDays(int days) throws SQLException {
+        return paymentDao.getDailyRevenueLastDays(days);
     }
 
     public BigDecimal getTotalRevenue() throws SQLException {

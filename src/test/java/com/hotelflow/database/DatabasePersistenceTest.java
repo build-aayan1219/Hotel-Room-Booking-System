@@ -1,20 +1,19 @@
 package com.hotelflow.database;
 
-import com.hotelflow.dao.BookingDao;
-import com.hotelflow.dao.GuestDao;
-import com.hotelflow.dao.PaymentDao;
-import com.hotelflow.dao.RoomDao;
 import com.hotelflow.model.Booking;
 import com.hotelflow.model.Guest;
-import com.hotelflow.model.Payment;
 import com.hotelflow.model.Room;
 import com.hotelflow.service.HotelService;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.io.File;
 import java.math.BigDecimal;
+import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -24,40 +23,51 @@ public class DatabasePersistenceTest {
 
     @BeforeAll
     static void init() {
+        new File("target").mkdirs();
+        new File("target/test_hotelflow.db").delete();
+        DatabaseManager.setCustomDbUrl("jdbc:sqlite:target/test_hotelflow.db");
         DatabaseManager.initializeDatabase();
     }
 
     @Test
-    @DisplayName("Verify SQLite schema seeds rooms, guests, and allows booking insertion")
+    @DisplayName("Verify database schema seeds users, rooms, guests, and allows booking insertion")
     void testDatabaseOperations() throws SQLException {
         HotelService service = new HotelService();
 
-        // 1. Verify rooms are seeded
+        // 1. Verify default users are seeded
+        try (Connection conn = DatabaseManager.getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery("SELECT username, role FROM users WHERE username = 'admin'")) {
+            assertTrue(rs.next(), "Admin user must be seeded in database");
+            assertEquals("ADMIN", rs.getString("role"));
+        }
+
+        // 2. Verify rooms are seeded
         List<Room> rooms = service.getAllRooms();
         assertFalse(rooms.isEmpty(), "Rooms should be initialized and seeded");
 
-        // 2. Verify guests are seeded
+        // 3. Verify guests are seeded
         List<Guest> guests = service.getAllGuests();
         assertFalse(guests.isEmpty(), "Guests should be initialized and seeded");
 
-        // 3. Create a test guest and booking
+        // 4. Create a test guest and booking
         Guest testGuest = new Guest("Test Guest Viva", "9998887776", "test.viva@example.com", "Pune");
         int guestId = service.saveGuest(testGuest);
         assertTrue(guestId > 0, "Guest should be saved and assigned an auto-increment ID");
 
-        // 4. Test booking creation on room 301 for a future date
+        // 5. Test booking creation on room 301 for a future date
         LocalDate checkIn = LocalDate.now().plusDays(20);
         LocalDate checkOut = LocalDate.now().plusDays(22);
 
         int bookingId = service.createBooking(guestId, 301, checkIn, checkOut);
         assertTrue(bookingId > 0, "Booking should be saved with generated ID");
 
-        // 5. Test date conflict prevention on the same room 301
+        // 6. Test date conflict prevention on the same room 301
         assertThrows(IllegalStateException.class, () -> {
             service.createBooking(guestId, 301, checkIn.plusDays(1), checkOut.plusDays(1));
         }, "Overlapping dates on room 301 must trigger conflict exception");
 
-        // 6. Test payment recording
+        // 7. Test payment recording
         Booking booking = service.getBookingById(bookingId).orElseThrow();
         BigDecimal balance = booking.getBalanceAmount();
         assertTrue(balance.compareTo(BigDecimal.ZERO) > 0, "New booking must have balance due");
