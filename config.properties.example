@@ -1,0 +1,23 @@
+# =================================================================
+# HotelFlow - Razorpay Payment Gateway Configuration Template
+# =================================================================
+# Copy this file to 'config.properties' (ignored by git) OR
+# configure these as Environment Variables or JVM properties.
+#
+# Get your free Test Mode API Keys at:
+# https://dashboard.razorpay.com/#/app/keys
+# =================================================================
+
+# Razorpay Test Key ID (Starts with rzp_test_)
+RAZORPAY_KEY_ID=rzp_test_YOUR_KEY_ID
+
+# Razorpay Test Key Secret
+RAZORPAY_KEY_SECRET=YOUR_KEY_SECRET
+
+# Optional MySQL Database Configuration (if MySQL is running locally)
+# hotelflow.mysql.host=localhost
+# hotelflow.mysql.port=3306
+# hotelflow.mysql.db=hotelflow_db
+# hotelflow.mysql.user=root
+# hotelflow.mysql.password=
+

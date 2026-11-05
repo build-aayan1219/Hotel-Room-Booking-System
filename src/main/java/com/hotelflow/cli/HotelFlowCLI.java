@@ -479,10 +479,45 @@ public class HotelFlowCLI {
             }
             TableFormatter.printTable(headers, rows);
 
-            System.out.println("  [P] Record Payment   [I] View & Print Invoice   [B] Back");
+            System.out.println("  [R] Razorpay Online Checkout   [P] Record Counter Payment   [I] View & Print Invoice   [B] Back");
             String choice = readInput("Action: ").trim().toUpperCase();
 
-            if (choice.equals("P")) {
+            if (choice.equals("R")) {
+                int bId = readInt("Enter Booking #: ");
+                Booking b = bookings.stream().filter(x -> x.getId() == bId).findFirst().orElse(null);
+                if (b == null) {
+                    TableFormatter.printError("Booking #" + bId + " not found.");
+                    return;
+                }
+                if (b.getBalanceAmount().compareTo(BigDecimal.ZERO) <= 0) {
+                    TableFormatter.printSuccess("Booking is already fully paid!");
+                    return;
+                }
+                System.out.println("Outstanding Balance: " + TableFormatter.formatCurrency(b.getBalanceAmount()));
+                BigDecimal amount = readBigDecimal("Payment Amount (₹): ");
+                try {
+                    com.hotelflow.service.RazorpayService rzpService = new com.hotelflow.service.RazorpayService();
+                    var orderDto = rzpService.createOrder(b, amount);
+                    com.hotelflow.service.RazorpayHttpBridge bridge = com.hotelflow.service.RazorpayHttpBridge.getInstance(rzpService);
+                    String url = bridge.getCheckoutUrl(orderDto.orderId());
+                    TableFormatter.printSubHeader("⚡ RAZORPAY SECURE CHECKOUT INITIALIZED");
+                    System.out.println("  Order ID : " + orderDto.orderId());
+                    System.out.println("  Amount   : " + TableFormatter.formatCurrency(amount));
+                    System.out.println("  Gateway  : " + url);
+                    System.out.println("  Attempting to open checkout in your default web browser...");
+                    try {
+                        if (java.awt.Desktop.isDesktopSupported() && java.awt.Desktop.getDesktop().isSupported(java.awt.Desktop.Action.BROWSE)) {
+                            java.awt.Desktop.getDesktop().browse(new java.net.URI(url));
+                        } else {
+                            Runtime.getRuntime().exec(new String[]{"rundll32", "url.dll,FileProtocolHandler", url});
+                        }
+                    } catch (Exception ignored) {}
+                    readInput("Complete payment in browser and press [Enter] to refresh booking status...");
+                } catch (Exception e) {
+                    TableFormatter.printError("Razorpay Gateway Error: " + e.getMessage());
+                }
+
+            } else if (choice.equals("P")) {
                 int bId = readInt("Enter Booking #: ");
                 Booking b = bookings.stream().filter(x -> x.getId() == bId).findFirst().orElse(null);
                 if (b == null) {
@@ -551,7 +586,7 @@ public class HotelFlowCLI {
                 System.out.println("  PAYMENT TRANSACTIONS:");
                 for (Payment p : payments) {
                     System.out.printf("    • %s via %s (Ref: %s)%n",
-                            TableFormatter.formatCurrency(p.getAmount()), p.getPaymentMethod(), p.getReferenceNote());
+                            TableFormatter.formatCurrency(p.getAmount()), p.getPaymentMethod(), p.getReferenceNote() + (p.getRazorpayPaymentId() != null ? " [Rzp Txn: " + p.getRazorpayPaymentId() + "]" : ""));
                 }
             }
         } catch (Exception ignored) {}

@@ -4,3 +4,7 @@ target/
 .vscode/
 *.log
 .env
+config.properties
+*.db-journal
+HotelFlow_Invoice_*.txt
+HotelFlow_Receipt_*.txt
