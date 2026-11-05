@@ -9,6 +9,7 @@ import com.hotelflow.model.Room;
 import com.hotelflow.model.RoomType;
 import com.hotelflow.service.HotelConfig;
 import com.hotelflow.service.HotelService;
+import com.hotelflow.service.RazorpayService;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
@@ -38,16 +39,18 @@ import java.util.List;
 
 /**
  * Booking Management View: 5-step booking creation flow, date collision validation,
- * status filtering, cancellation, and detailed booking inspect modal.
+ * Razorpay Payment Gateway launch, status filtering, cancellation, and detailed booking inspect modal.
  */
 public class BookingManagementView {
     private final HotelService service;
+    private final RazorpayService razorpayService;
     private final ObservableList<Booking> bookingList = FXCollections.observableArrayList();
     private FilteredList<Booking> filteredList;
     private TableView<Booking> bookingTable;
 
     public BookingManagementView(HotelService service) {
         this.service = service;
+        this.razorpayService = new RazorpayService();
     }
 
     public Node getView() {
@@ -142,16 +145,27 @@ public class BookingManagementView {
         });
 
         TableColumn<Booking, Void> colActions = new TableColumn<>("Actions");
-        colActions.setMaxWidth(200);
+        colActions.setMaxWidth(250);
         colActions.setCellFactory(col -> new TableCell<>() {
+            private final Button btnPay = new Button("💳 Pay");
             private final Button btnView = new Button("Details");
             private final Button btnCancel = new Button("Cancel");
-            private final HBox pane = new HBox(6, btnView, btnCancel);
+            private final HBox pane = new HBox(6, btnPay, btnView, btnCancel);
 
             {
+                btnPay.getStyleClass().add("btn-success");
                 btnView.getStyleClass().add("btn-secondary");
                 btnCancel.getStyleClass().add("btn-danger");
                 pane.setAlignment(Pos.CENTER);
+
+                btnPay.setOnAction(e -> {
+                    Booking b = getTableView().getItems().get(getIndex());
+                    if (b.getBalanceAmount().compareTo(BigDecimal.ZERO) <= 0) {
+                        UIUtils.showInfo("Paid", "Booking #" + b.getId() + " is already fully paid.");
+                        return;
+                    }
+                    new RazorpayCheckoutDialog(razorpayService, b, b.getBalanceAmount(), BookingManagementView.this::loadBookings).show();
+                });
 
                 btnView.setOnAction(e -> {
                     Booking b = getTableView().getItems().get(getIndex());
@@ -185,7 +199,19 @@ public class BookingManagementView {
             @Override
             protected void updateItem(Void item, boolean empty) {
                 super.updateItem(item, empty);
-                setGraphic(empty ? null : pane);
+                if (empty) {
+                    setGraphic(null);
+                } else {
+                    Booking b = getTableView().getItems().get(getIndex());
+                    if (b != null && (b.getStatus() == BookingStatus.CANCELLED || b.getBalanceAmount().compareTo(BigDecimal.ZERO) <= 0)) {
+                        btnPay.setVisible(false);
+                        btnPay.setManaged(false);
+                    } else {
+                        btnPay.setVisible(true);
+                        btnPay.setManaged(true);
+                    }
+                    setGraphic(pane);
+                }
             }
         });
 
@@ -358,8 +384,17 @@ public class BookingManagementView {
 
                 try {
                     int bookingId = service.createBooking(guest.getId(), room.getRoomNumber(), in, out);
-                    UIUtils.showInfo("Success", "Booking #" + bookingId + " confirmed for " + guest.getFullName() + " in Room #" + room.getRoomNumber() + "!");
                     loadBookings();
+
+                    boolean payNow = UIUtils.showConfirmation("Proceed to Razorpay Payment?",
+                            "Reservation #" + bookingId + " confirmed for " + guest.getFullName() + " in Room #" + room.getRoomNumber() + "!\n\n"
+                            + "Would you like to pay now using Razorpay Gateway (UPI, Cards, NetBanking)?");
+                    if (payNow) {
+                        service.getBookingById(bookingId).ifPresent(b -> {
+                            new RazorpayCheckoutDialog(razorpayService, b, b.getBalanceAmount(), this::loadBookings).show();
+                        });
+                    }
+
                     return true;
                 } catch (Exception ex) {
                     UIUtils.showError("Reservation Failed", ex.getMessage());
@@ -376,9 +411,9 @@ public class BookingManagementView {
         Dialog<Void> dialog = new Dialog<>();
         dialog.setTitle("Booking #" + b.getId() + " - Summary & Bill");
 
-        VBox box = new VBox(12);
+        VBox box = new VBox(14);
         box.setPadding(new Insets(20));
-        box.setPrefWidth(420);
+        box.setPrefWidth(440);
 
         Label lblHeader = new Label("Reservation Details");
         lblHeader.setStyle("-fx-font-size: 16px; -fx-font-weight: bold;");
@@ -428,7 +463,23 @@ public class BookingManagementView {
         grid.add(new Label("Booking Status:"), 0, 12);
         grid.add(new Label(b.getStatus().getDisplayName()), 1, 12);
 
+        grid.add(new Label("Payment Status:"), 0, 13);
+        grid.add(new Label(b.getPaymentStatus().getLabel()), 1, 13);
+
         box.getChildren().addAll(lblHeader, grid);
+
+        if (b.getBalanceAmount().compareTo(BigDecimal.ZERO) > 0 && b.getStatus() != BookingStatus.CANCELLED) {
+            Button btnPayNow = new Button("💳 Pay with Razorpay (" + UIUtils.formatCurrency(b.getBalanceAmount()) + ")");
+            btnPayNow.getStyleClass().add("btn-primary");
+            btnPayNow.setStyle("-fx-padding: 10px 16px; -fx-font-weight: bold;");
+            btnPayNow.setMaxWidth(Double.MAX_VALUE);
+            btnPayNow.setOnAction(e -> {
+                dialog.close();
+                new RazorpayCheckoutDialog(razorpayService, b, b.getBalanceAmount(), this::loadBookings).show();
+            });
+            box.getChildren().add(btnPayNow);
+        }
+
         dialog.getDialogPane().setContent(box);
         dialog.getDialogPane().getButtonTypes().add(javafx.scene.control.ButtonType.CLOSE);
         dialog.showAndWait();
