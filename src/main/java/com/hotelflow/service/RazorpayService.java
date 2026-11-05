@@ -205,8 +205,11 @@ public class RazorpayService {
         paymentDao.updateStatusByOrderId(orderId, PaymentStatus.SUCCESS, paymentId, detectedMethod);
 
         // 5. Reload payment
-        Payment completedPayment = paymentDao.findByRazorpayOrderId(orderId)
-                .orElseGet(() -> paymentDao.findByRazorpayPaymentId(paymentId).orElse(null));
+        Optional<Payment> opt = paymentDao.findByRazorpayOrderId(orderId);
+        if (opt.isEmpty()) {
+            opt = paymentDao.findByRazorpayPaymentId(paymentId);
+        }
+        Payment completedPayment = opt.orElse(null);
 
         if (completedPayment == null) {
             throw new IllegalStateException("Payment record not found for Order ID: " + orderId);
