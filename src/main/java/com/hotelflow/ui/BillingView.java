@@ -4,6 +4,7 @@ import com.hotelflow.model.Booking;
 import com.hotelflow.model.Payment;
 import com.hotelflow.model.PaymentStatus;
 import com.hotelflow.service.HotelService;
+import com.hotelflow.service.RazorpayService;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
@@ -15,6 +16,7 @@ import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
+import javafx.scene.control.Separator;
 import javafx.scene.control.TableCell;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
@@ -34,17 +36,19 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 /**
- * Billing & Payments View: Itemized billing, payment transactions (Cash, UPI, Cards),
- * payment history, status badges, and invoice generator/text-export.
+ * Billing & Payments View: Itemized billing, Razorpay Payment Gateway integration,
+ * offline payment fallback, payment history, status badges, and invoice/receipt export.
  */
 public class BillingView {
     private final HotelService service;
+    private final RazorpayService razorpayService;
     private final ObservableList<Booking> bookingMasterList = FXCollections.observableArrayList();
     private FilteredList<Booking> filteredList;
     private TableView<Booking> billingTable;
 
     public BillingView(HotelService service) {
         this.service = service;
+        this.razorpayService = new RazorpayService();
     }
 
     public Node getView() {
@@ -54,7 +58,7 @@ public class BillingView {
         HBox topBar = new HBox(12);
         topBar.setAlignment(Pos.CENTER_LEFT);
 
-        Label lblTitle = new Label("Billing, Invoices & Payment Gateway Simulation");
+        Label lblTitle = new Label("Billing, Invoices & Razorpay Payment Gateway");
         lblTitle.setStyle("-fx-font-size: 18px; -fx-font-weight: bold; -fx-text-fill: #0f172a;");
 
         topBar.getChildren().addAll(lblTitle, UIUtils.createSpacer());
@@ -121,8 +125,10 @@ public class BillingView {
                     setGraphic(null);
                 } else {
                     String cls = switch (item) {
-                        case PAID -> "badge-paid";
-                        case PARTIALLY_PAID -> "badge-partial";
+                        case PAID, SUCCESS -> "badge-paid";
+                        case PARTIALLY_PAID, PENDING -> "badge-partial";
+                        case FAILED -> "badge-cancelled";
+                        case REFUNDED -> "badge-secondary";
                         case UNPAID -> "badge-unpaid";
                     };
                     setGraphic(UIUtils.createBadge(item.getLabel(), cls));
@@ -131,9 +137,9 @@ public class BillingView {
         });
 
         TableColumn<Booking, Void> colActions = new TableColumn<>("Actions");
-        colActions.setMaxWidth(240);
+        colActions.setMaxWidth(260);
         colActions.setCellFactory(col -> new TableCell<>() {
-            private final Button btnPay = new Button("💳 Pay");
+            private final Button btnPay = new Button("💳 Pay Now");
             private final Button btnInvoice = new Button("📄 Invoice");
             private final HBox pane = new HBox(6, btnPay, btnInvoice);
 
@@ -144,7 +150,7 @@ public class BillingView {
 
                 btnPay.setOnAction(e -> {
                     Booking b = getTableView().getItems().get(getIndex());
-                    showPaymentDialog(b);
+                    showPaymentOptionsDialog(b);
                 });
 
                 btnInvoice.setOnAction(e -> {
@@ -156,7 +162,21 @@ public class BillingView {
             @Override
             protected void updateItem(Void item, boolean empty) {
                 super.updateItem(item, empty);
-                setGraphic(empty ? null : pane);
+                if (empty) {
+                    setGraphic(null);
+                } else {
+                    Booking b = getTableView().getItems().get(getIndex());
+                    if (b != null && b.getBalanceAmount().compareTo(BigDecimal.ZERO) <= 0) {
+                        btnPay.setText("✅ Paid");
+                        btnPay.setDisable(true);
+                        btnPay.setStyle("-fx-opacity: 0.6;");
+                    } else {
+                        btnPay.setText("💳 Pay Now");
+                        btnPay.setDisable(false);
+                        btnPay.setStyle("");
+                    }
+                    setGraphic(pane);
+                }
             }
         });
 
@@ -200,72 +220,112 @@ public class BillingView {
         }
     }
 
-    private void showPaymentDialog(Booking b) {
+    /**
+     * Shows payment selection dialog offering both Razorpay Online Checkout (primary)
+     * and Offline / Counter Payment (fallback).
+     */
+    private void showPaymentOptionsDialog(Booking b) {
         BigDecimal balance = b.getBalanceAmount();
         if (balance.compareTo(BigDecimal.ZERO) <= 0) {
             UIUtils.showInfo("Payment Settled", "Booking #" + b.getId() + " is already fully paid!");
             return;
         }
 
-        Dialog<Boolean> dialog = new Dialog<>();
-        dialog.setTitle("Record Payment - Booking #" + b.getId());
-        dialog.setHeaderText("Record guest payment transaction against Booking #" + b.getId() + " (" + b.getGuestName() + ")");
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle("Process Payment - Booking #" + b.getId());
+        dialog.setHeaderText("Choose Payment Method for " + b.getGuestName() + " (Room #" + b.getRoomNumber() + ")");
 
-        GridPane grid = new GridPane();
-        grid.setHgap(12);
-        grid.setVgap(12);
-        grid.setPadding(new Insets(20));
+        VBox content = new VBox(16);
+        content.setPadding(new Insets(20));
+        content.setPrefWidth(460);
 
-        Label lblTotal = new Label(UIUtils.formatCurrency(b.getTotalAmount()));
-        Label lblPaid = new Label(UIUtils.formatCurrency(b.getPaidAmount()));
+        // Amount summary
+        GridPane summaryGrid = new GridPane();
+        summaryGrid.setHgap(10);
+        summaryGrid.setVgap(6);
+        summaryGrid.add(new Label("Total Invoice:"), 0, 0);
+        summaryGrid.add(new Label(UIUtils.formatCurrency(b.getTotalAmount())), 1, 0);
+        summaryGrid.add(new Label("Already Paid:"), 0, 1);
+        summaryGrid.add(new Label(UIUtils.formatCurrency(b.getPaidAmount())), 1, 1);
+        summaryGrid.add(new Label("Outstanding Balance:"), 0, 2);
         Label lblBalance = new Label(UIUtils.formatCurrency(balance));
-        lblBalance.setStyle("-fx-font-weight: bold; -fx-text-fill: #dc2626;");
+        lblBalance.setStyle("-fx-font-weight: bold; -fx-text-fill: #dc2626; -fx-font-size: 15px;");
+        summaryGrid.add(lblBalance, 1, 2);
 
+        // Custom amount entry (defaults to full balance)
+        HBox amtBox = new HBox(8);
+        amtBox.setAlignment(Pos.CENTER_LEFT);
+        Label lblPayAmt = new Label("Amount to Pay (₹):");
         TextField txtAmount = new TextField(balance.toPlainString());
-        ComboBox<String> cbMethod = new ComboBox<>(FXCollections.observableArrayList("UPI", "CASH", "CREDIT_CARD", "DEBIT_CARD", "NET_BANKING"));
-        cbMethod.setValue("UPI");
+        txtAmount.setPrefWidth(140);
+        amtBox.getChildren().addAll(lblPayAmt, txtAmount);
 
-        TextField txtNote = new TextField();
-        txtNote.setPromptText("e.g. Transaction ID / GPay Ref");
+        // Razorpay Gateway Card
+        VBox rzpCard = new VBox(10);
+        rzpCard.setStyle("-fx-background-color: #eff6ff; -fx-padding: 16px; -fx-background-radius: 8px; -fx-border-color: #3b82f6; -fx-border-radius: 8px;");
 
-        grid.add(new Label("Total Invoice Amount:"), 0, 0);
-        grid.add(lblTotal, 1, 0);
-        grid.add(new Label("Already Paid:"), 0, 1);
-        grid.add(lblPaid, 1, 1);
-        grid.add(new Label("Outstanding Balance:"), 0, 2);
-        grid.add(lblBalance, 1, 2);
-        grid.add(new Label("Payment Amount (₹):"), 0, 3);
-        grid.add(txtAmount, 1, 3);
-        grid.add(new Label("Payment Method:"), 0, 4);
-        grid.add(cbMethod, 1, 4);
-        grid.add(new Label("Reference Note:"), 0, 5);
-        grid.add(txtNote, 1, 5);
+        Label lblRzpTitle = new Label("⚡ Razorpay Secure Gateway (Recommended)");
+        lblRzpTitle.setStyle("-fx-font-weight: bold; -fx-font-size: 14px; -fx-text-fill: #1d4ed8;");
+        Label lblRzpSub = new Label("Supports UPI (GPay, PhonePe, Paytm, QR), Credit/Debit Cards, NetBanking, and Wallets with cryptographic verification.");
+        lblRzpSub.setWrapText(true);
+        lblRzpSub.setStyle("-fx-font-size: 12px; -fx-text-fill: #3b82f6;");
 
-        dialog.getDialogPane().setContent(grid);
-        dialog.getDialogPane().getButtonTypes().addAll(javafx.scene.control.ButtonType.OK, javafx.scene.control.ButtonType.CANCEL);
+        Button btnRzp = new Button("Proceed to Razorpay Checkout");
+        btnRzp.getStyleClass().add("btn-primary");
+        btnRzp.setStyle("-fx-font-weight: bold; -fx-padding: 10px 16px;");
 
-        dialog.setResultConverter(btn -> {
-            if (btn == javafx.scene.control.ButtonType.OK) {
-                try {
-                    BigDecimal amt = new BigDecimal(txtAmount.getText().trim());
-                    String method = cbMethod.getValue();
-                    String note = txtNote.getText().trim();
-
-                    service.recordPayment(b.getId(), amt, method, note);
-                    UIUtils.showInfo("Payment Recorded", "Payment of " + UIUtils.formatCurrency(amt) + " successfully recorded!");
-                    loadBillingData();
-                    return true;
-                } catch (NumberFormatException nfe) {
-                    UIUtils.showError("Validation Error", "Invalid payment amount entered.");
-                    return false;
-                } catch (Exception ex) {
-                    UIUtils.showError("Transaction Failed", ex.getMessage());
-                    return false;
+        btnRzp.setOnAction(e -> {
+            try {
+                BigDecimal amt = new BigDecimal(txtAmount.getText().trim());
+                if (amt.compareTo(BigDecimal.ZERO) <= 0 || amt.compareTo(balance) > 0) {
+                    UIUtils.showError("Invalid Amount", "Please enter a valid amount up to " + UIUtils.formatCurrency(balance));
+                    return;
                 }
+                dialog.close();
+                new RazorpayCheckoutDialog(razorpayService, b, amt, this::loadBillingData).show();
+            } catch (NumberFormatException nfe) {
+                UIUtils.showError("Invalid Amount", "Please enter a valid numeric amount.");
             }
-            return null;
         });
 
+        rzpCard.getChildren().addAll(lblRzpTitle, lblRzpSub, btnRzp);
+
+        // Offline Cash / Counter Payment Accordion/Section
+        VBox offlineCard = new VBox(10);
+        offlineCard.setStyle("-fx-background-color: #f8fafc; -fx-padding: 14px; -fx-background-radius: 8px; -fx-border-color: #cbd5e1; -fx-border-radius: 8px;");
+
+        Label lblOfflineTitle = new Label("💵 Counter / Offline Payment");
+        lblOfflineTitle.setStyle("-fx-font-weight: bold; -fx-font-size: 13px; -fx-text-fill: #475569;");
+
+        HBox offlineControls = new HBox(8);
+        ComboBox<String> cbMethod = new ComboBox<>(FXCollections.observableArrayList("CASH", "UPI (Direct Ref)", "CARD (POS Terminal)"));
+        cbMethod.setValue("CASH");
+
+        TextField txtNote = new TextField();
+        txtNote.setPromptText("Note / Receipt Ref");
+        HBox.setHgrow(txtNote, Priority.ALWAYS);
+
+        Button btnRecordOffline = new Button("Record Offline");
+        btnRecordOffline.getStyleClass().add("btn-secondary");
+
+        btnRecordOffline.setOnAction(e -> {
+            try {
+                BigDecimal amt = new BigDecimal(txtAmount.getText().trim());
+                service.recordPayment(b.getId(), amt, cbMethod.getValue(), txtNote.getText().trim());
+                UIUtils.showInfo("Payment Recorded", "Offline payment of " + UIUtils.formatCurrency(amt) + " recorded successfully!");
+                dialog.close();
+                loadBillingData();
+            } catch (Exception ex) {
+                UIUtils.showError("Transaction Failed", ex.getMessage());
+            }
+        });
+
+        offlineControls.getChildren().addAll(cbMethod, txtNote, btnRecordOffline);
+        offlineCard.getChildren().addAll(lblOfflineTitle, offlineControls);
+
+        content.getChildren().addAll(summaryGrid, amtBox, new Separator(), rzpCard, offlineCard);
+        dialog.getDialogPane().setContent(content);
+        dialog.getDialogPane().getButtonTypes().add(javafx.scene.control.ButtonType.CLOSE);
         dialog.showAndWait();
     }
 
@@ -275,7 +335,7 @@ public class BillingView {
 
         VBox box = new VBox(14);
         box.setPadding(new Insets(20));
-        box.setPrefWidth(520);
+        box.setPrefWidth(540);
 
         List<Payment> payments;
         try {
@@ -287,7 +347,7 @@ public class BillingView {
         StringBuilder sb = new StringBuilder();
         sb.append("====================================================\n");
         sb.append("                  HOTELFLOW INVOICE                 \n");
-        sb.append("       A Java-Based Hotel Management MVP            \n");
+        sb.append("       Hotel Booking & Management System            \n");
         sb.append("====================================================\n");
         sb.append(String.format("Invoice Date : %s%n", LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd-MMM-yyyy HH:mm"))));
         sb.append(String.format("Booking ID   : #%d%n", b.getId()));
@@ -309,11 +369,13 @@ public class BillingView {
             sb.append("  No payments recorded yet.\n");
         } else {
             for (Payment p : payments) {
-                sb.append(String.format("  • %s | %s | %s | %s%n",
+                String rzpRef = p.getRazorpayPaymentId() != null ? " [Rzp Txn: " + p.getRazorpayPaymentId() + "]" : "";
+                sb.append(String.format("  • %s | %s | %s | Status: %s%s%n",
                         p.getPaymentDate().format(DateTimeFormatter.ofPattern("dd-MMM HH:mm")),
                         UIUtils.formatCurrency(p.getAmount()),
                         p.getPaymentMethod(),
-                        p.getReferenceNote()));
+                        p.getStatus().getLabel(),
+                        rzpRef));
             }
         }
         sb.append("----------------------------------------------------\n");
@@ -328,6 +390,9 @@ public class BillingView {
         area.setWrapText(false);
         area.setPrefRowCount(18);
         area.setStyle("-fx-font-family: 'Consolas', monospace; -fx-font-size: 12px;");
+
+        HBox btnBox = new HBox(10);
+        btnBox.setAlignment(Pos.CENTER_RIGHT);
 
         Button btnExport = new Button("💾 Save Invoice Text File");
         btnExport.getStyleClass().add("btn-primary");
@@ -344,7 +409,9 @@ public class BillingView {
             }
         });
 
-        box.getChildren().addAll(area, btnExport);
+        btnBox.getChildren().add(btnExport);
+
+        box.getChildren().addAll(area, btnBox);
         dialog.getDialogPane().setContent(box);
         dialog.getDialogPane().getButtonTypes().add(javafx.scene.control.ButtonType.CLOSE);
         dialog.showAndWait();
