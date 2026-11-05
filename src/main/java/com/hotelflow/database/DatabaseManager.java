@@ -161,6 +161,9 @@ public class DatabaseManager {
                 initSqliteSchema(stmt);
             }
 
+            // Apply migrations for Razorpay fields on existing databases
+            migratePaymentsTableIfNecessary(conn);
+
             // Seed initial records if empty
             seedInitialDataIfEmpty(conn);
 
@@ -236,6 +239,9 @@ public class DatabaseManager {
                 payment_method TEXT NOT NULL,
                 reference_note TEXT,
                 payment_date TEXT NOT NULL,
+                razorpay_order_id TEXT,
+                razorpay_payment_id TEXT,
+                payment_status TEXT NOT NULL DEFAULT 'SUCCESS',
                 FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE CASCADE
             );
         """);
@@ -307,6 +313,9 @@ public class DatabaseManager {
                 payment_method VARCHAR(50) NOT NULL,
                 reference_note VARCHAR(255),
                 payment_date VARCHAR(50) NOT NULL,
+                razorpay_order_id VARCHAR(100),
+                razorpay_payment_id VARCHAR(100),
+                payment_status VARCHAR(30) NOT NULL DEFAULT 'SUCCESS',
                 FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE CASCADE
             );
         """);
@@ -501,5 +510,44 @@ public class DatabaseManager {
         } catch (Exception e) {
             throw new RuntimeException("SHA-256 error: " + e.getMessage(), e);
         }
+    }
+
+    private static void migratePaymentsTableIfNecessary(Connection conn) {
+        try (Statement stmt = conn.createStatement()) {
+            if (isMySqlActive) {
+                tryAddMySqlColumn(stmt, "payments", "razorpay_order_id", "VARCHAR(100)");
+                tryAddMySqlColumn(stmt, "payments", "razorpay_payment_id", "VARCHAR(100)");
+                tryAddMySqlColumn(stmt, "payments", "payment_status", "VARCHAR(30) NOT NULL DEFAULT 'SUCCESS'");
+            } else {
+                tryAddSqliteColumn(stmt, "payments", "razorpay_order_id", "TEXT");
+                tryAddSqliteColumn(stmt, "payments", "razorpay_payment_id", "TEXT");
+                tryAddSqliteColumn(stmt, "payments", "payment_status", "TEXT NOT NULL DEFAULT 'SUCCESS'");
+            }
+        } catch (Exception e) {
+            System.err.println("[Database] Migration check warning: " + e.getMessage());
+        }
+    }
+
+    private static void tryAddSqliteColumn(Statement stmt, String table, String column, String colDef) {
+        try (ResultSet rs = stmt.executeQuery("PRAGMA table_info(" + table + ")")) {
+            boolean found = false;
+            while (rs.next()) {
+                if (column.equalsIgnoreCase(rs.getString("name"))) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                stmt.execute("ALTER TABLE " + table + " ADD COLUMN " + column + " " + colDef);
+                System.out.println("[Database] SQLite migrated table " + table + ": added column " + column);
+            }
+        } catch (SQLException ignored) {}
+    }
+
+    private static void tryAddMySqlColumn(Statement stmt, String table, String column, String colDef) {
+        try {
+            stmt.execute("ALTER TABLE " + table + " ADD COLUMN " + column + " " + colDef);
+            System.out.println("[Database] MySQL migrated table " + table + ": added column " + column);
+        } catch (SQLException ignored) {}
     }
 }

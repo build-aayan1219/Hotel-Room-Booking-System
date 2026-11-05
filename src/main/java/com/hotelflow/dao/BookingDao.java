@@ -74,7 +74,7 @@ public class BookingDao {
     public Optional<Booking> findById(int id) throws SQLException {
         String sql = """
             SELECT b.*, g.full_name as guest_name, g.phone as guest_phone, r.room_type,
-                   COALESCE((SELECT SUM(amount_paise) FROM payments p WHERE p.booking_id = b.id), 0) as paid_paise
+                   COALESCE((SELECT SUM(amount_paise) FROM payments p WHERE p.booking_id = b.id AND (p.payment_status = 'SUCCESS' OR p.payment_status IS NULL)), 0) as paid_paise
             FROM bookings b
             JOIN guests g ON b.guest_id = g.id
             JOIN rooms r ON b.room_number = r.room_number
@@ -96,7 +96,7 @@ public class BookingDao {
         List<Booking> list = new ArrayList<>();
         String sql = """
             SELECT b.*, g.full_name as guest_name, g.phone as guest_phone, r.room_type,
-                   COALESCE((SELECT SUM(amount_paise) FROM payments p WHERE p.booking_id = b.id), 0) as paid_paise
+                   COALESCE((SELECT SUM(amount_paise) FROM payments p WHERE p.booking_id = b.id AND (p.payment_status = 'SUCCESS' OR p.payment_status IS NULL)), 0) as paid_paise
             FROM bookings b
             JOIN guests g ON b.guest_id = g.id
             JOIN rooms r ON b.room_number = r.room_number
@@ -168,7 +168,7 @@ public class BookingDao {
         List<Booking> list = new ArrayList<>();
         String sql = """
             SELECT b.*, g.full_name as guest_name, g.phone as guest_phone, r.room_type,
-                   COALESCE((SELECT SUM(amount_paise) FROM payments p WHERE p.booking_id = b.id), 0) as paid_paise
+                   COALESCE((SELECT SUM(amount_paise) FROM payments p WHERE p.booking_id = b.id AND (p.payment_status = 'SUCCESS' OR p.payment_status IS NULL)), 0) as paid_paise
             FROM bookings b
             JOIN guests g ON b.guest_id = g.id
             JOIN rooms r ON b.room_number = r.room_number
